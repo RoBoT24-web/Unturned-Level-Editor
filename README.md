@@ -79,5 +79,3 @@ module. Assets alone do not require disabling BattlEye.
   filter if the list was built before loading finished.
 - **After game updates:** the module may need rebuilding or API changes.
   Check the Console or `Unturned\Logs\Client.log` for errors.
-
-Landscape-hole enhancements and material tools are not currently implemented.
