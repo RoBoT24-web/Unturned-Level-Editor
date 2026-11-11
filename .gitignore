@@ -1,0 +1,46 @@
+# Build output and release executables (publish installers via GitHub Releases).
+**/bin/
+**/obj/
+/Installer/dist/
+/BarricadeSlots/WorkshopUpload/
+*.exe
+*.dll
+*.pdb
+*.nupkg
+*.snupkg
+
+# Local third-party source/reference checkouts, not project deliverables.
+/U3-SDK/
+/_decompiled/
+
+# IDE and user-specific files.
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+
+# Test output and temporary files.
+**/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.log
+*.tmp
+*.bak
+
+# Local module state.
+LevelEditorPlus.settings.json
+LevelEditorPlus.clipboard.json
+
+# Signing credentials and local environment secrets.
+*.pfx
+*.p12
+*.key
+.env
+.env.*
+!.env.example
+
+# Windows metadata.
+Thumbs.db
+Desktop.ini

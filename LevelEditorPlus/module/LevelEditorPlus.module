@@ -1,0 +1,13 @@
+{
+  "IsEnabled": true,
+  "Name": "LevelEditorPlus",
+  "Version": "0.1.0.0",
+  "Dependencies": [],
+  "Assemblies": [
+    {
+      "Path": "/LevelEditorPlus.dll",
+      "Role": "Client",
+      "Load_As_Byte_Array": false
+    }
+  ]
+}

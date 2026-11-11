@@ -1,0 +1,27 @@
+ManifestFileVersion: 0
+CRC: 3374780680
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 5b6ddde01ca3847f9ee56e030bdb5d67
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 67e4dbaa58ed4fefbbb0470b69d6815e
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 5b6ddde01ca3847f9ee56e030bdb5d67
+HashAppended: 0
+ClassTypes:
+- Class: 1
+  Script: {instanceID: 0}
+- Class: 4
+  Script: {instanceID: 0}
+- Class: 65
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Bundles/BarricadeSlots/Objects/Slot_Gate/Object.prefab
+- Assets/Bundles/BarricadeSlots/Objects/Slot_Door/Object.prefab
+- Assets/Bundles/BarricadeSlots/Objects/Slot_Hatch/Object.prefab
+- Assets/Bundles/BarricadeSlots/Objects/Slot_Window/Object.prefab
+Dependencies: []

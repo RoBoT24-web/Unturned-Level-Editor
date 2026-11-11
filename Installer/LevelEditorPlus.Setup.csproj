@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>10.0</LangVersion>
+    <AssemblyName>LevelEditorPlus-Setup</AssemblyName>
+    <Version>0.1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DebugType>embedded</DebugType>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <ModuleOutput>..\LevelEditorPlus\src\LevelEditorPlus\bin\$(Configuration)</ModuleOutput>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Tests\**\*.cs" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <EmbeddedResource Include="$(ModuleOutput)\LevelEditorPlus.dll" LogicalName="Payload.Modules\LevelEditorPlus\LevelEditorPlus.dll" />
+    <EmbeddedResource Include="$(ModuleOutput)\0Harmony.dll" LogicalName="Payload.Modules\LevelEditorPlus\0Harmony.dll" />
+    <EmbeddedResource Include="..\LevelEditorPlus\module\LevelEditorPlus.module" LogicalName="Payload.Modules\LevelEditorPlus\LevelEditorPlus.module" />
+    <EmbeddedResource Include="$(NuGetPackageRoot)lib.harmony\2.3.3\LICENSE" LogicalName="Payload.Modules\LevelEditorPlus\Harmony-LICENSE.txt" />
+    <EmbeddedResource Include="..\BarricadeSlots\Content\BarricadeSlots\**\*" Exclude="..\BarricadeSlots\Content\BarricadeSlots\**\*.manifest">
+      <LogicalName>Payload.Sandbox\BarricadeSlots\%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <Target Name="CheckBundle" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('..\BarricadeSlots\Content\BarricadeSlots\barricadeslots.masterbundle')"
+           Text="Export the BarricadeSlots masterbundle before building the installer." />
+  </Target>
+</Project>
