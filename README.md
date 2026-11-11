@@ -62,48 +62,11 @@ checked. Rebinding cancels an active fit.
 
 ## Barricade slots
 
-See the [asset guide](BarricadeSlots/README.md) for placement, fitting, map
-sharing, Unity builds, and **Workshop publishing instructions**.
+See the [asset guide](BarricadeSlots/README.md) for placement, fitting, and map
+sharing.
 
 Players need the slot assets when a map uses them, but do not need this editor
 module. Assets alone do not require disabling BattlEye.
-
-## Build from source
-
-Requires Windows, a .NET SDK, and an installed copy of Unturned.
-Run from the repository root:
-
-```powershell
-dotnet build ".\LevelEditorPlus\src\LevelEditorPlus\LevelEditorPlus.csproj" -p:GamePath="C:\path\to\Unturned"
-```
-
-This installs the module into that game's `Modules\LevelEditorPlus` folder.
-The default game path is configured in the project file.
-
-Build the single-file installer using the default game path:
-
-```powershell
-& ".\Installer\Build-Installer.ps1"
-```
-
-Output: `Installer\dist\LevelEditorPlus-Setup.exe`. Publish this EXE in
-**GitHub Releases**, not in the source repository.
-The installer embeds the current Release build and exported slot assets.
-Its build script does not install the module locally.
-
-### Tests
-
-```powershell
-dotnet run --project ".\LevelEditorPlus\tests\OpeningGeometry.Tests\OpeningGeometry.Tests.csproj"
-dotnet run --project ".\LevelEditorPlus\tests\Keybinds.Tests\Keybinds.Tests.csproj"
-dotnet run --project ".\LevelEditorPlus\tests\Hierarchy.Tests\Hierarchy.Tests.csproj"
-dotnet run --project ".\Installer\Tests\Installer.Tests.csproj" -- (Get-Location).Path
-```
-
-Build the installer before running its tests. Geometry/input/hierarchy tests
-use managed stand-ins; installer tests use its real payload and temporary
-folders. Native interactions, placement, undo, and map save/load still need
-in-game testing.
 
 ## Troubleshooting
 
