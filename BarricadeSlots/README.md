@@ -7,8 +7,7 @@ window barricades, and hatches. They do not remove or modify existing buildings.
 
 Use **one** source for the assets:
 
-- **Workshop:** subscribe to the pack once it is published, then restart.
-  A public Workshop link has not been added yet.
+- **Workshop:** subscribe to the [workshop mod](https://steamcommunity.com/sharedfiles/filedetails/?id=3838037462), then restart.
 - **Installer:** enable the optional BarricadeSlots checkbox.
 - **Manual:** copy [Content/BarricadeSlots](Content/BarricadeSlots) into
   `Unturned\Sandbox\BarricadeSlots`, or run:
@@ -49,71 +48,6 @@ Flip facing defaults to Ctrl+Shift+G. Change these live in **Keybinds**.
 
 **Resizing a slot does not resize the vanilla door, glass, shutter, or board.**
 Always test the actual barricade's visual fit.
-
-## Publish the pack to Workshop
-
-You need Steam signed in and a PNG/JPG preview image (use your own screenshot).
-No module DLLs, SDK source, or installer should be included.
-
-1. From the repository root, prepare the upload:
-
-   ```powershell
-   & ".\BarricadeSlots\Prepare-Workshop.ps1"
-   ```
-
-2. Launch Unturned and choose **Workshop > Submit**.
-3. Fill in:
-
-   | Field | Value |
-   |---|---|
-   | Name | `Barricade Slots` |
-   | Collection Path | Full path to `BarricadeSlots\WorkshopUpload` printed by the script |
-   | Preview Image | Full path to your PNG/JPG screenshot |
-   | Change Note | `Initial release` |
-   | Asset Type | Object |
-   | Visibility | Private for the initial test |
-   | Allowed IPs | Leave blank |
-   | Workshop Section | Ready-to-Use |
-
-4. Accept Steam's Workshop terms if prompted, then click **Create**.
-5. Open the new Workshop page and add the description below.
-6. Close the game. Move your local `Sandbox\BarricadeSlots` copy outside the
-   game folder, and test using the Workshop copy only. Also avoid testing on a
-   map containing an embedded copy.
-7. Subscribe if needed, restart, and confirm all four variants appear and
-   actual barricades can be placed. Test saving and reopening a map.
-8. Once verified, change visibility to **Public** on the Workshop page.
-   Add its URL to this guide and your GitHub project description.
-
-The generated collection contains only the exported pack:
-
-```text
-WorkshopUpload\
-  BarricadeSlots\
-    MasterBundle.dat
-    barricadeslots.masterbundle
-    Objects\
-```
-
-**Updates:** rerun the preparation script, fill in Collection Path and a change
-note in Submit, then select your existing published item at the bottom.
-Do not create a new item for each update or change the asset GUIDs.
-
-Official reference: [Unturned Workshop publishing](https://docs.smartlydressedgames.com/en/latest/about/steam-workshop.html#publishing-mods).
-
-### Suggested Workshop description
-
-> Invisible attachment-point objects for vanilla doors, gates, window
-> barricades, and hatches. For map creators: search "Barricade Slot" in the
-> editor's Objects tab.
->
-> The optional LevelEditorPlus editor module provides outlines and fitting
-> tools. It is installed separately, not included in this Workshop pack.
-> Players do not need the module or to disable BattlEye to use these assets.
->
-> Slot scaling does not resize vanilla barricades. Slots do not remove existing
-> window bars or alter building meshes. Do not install duplicate Sandbox or
-> embedded copies of this pack.
 
 ## Share a map
 
