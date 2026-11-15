@@ -18,8 +18,15 @@ namespace LevelEditorPlus.Features
         private float depthOffset;
         private bool upright;
         private Vector3 firstNormal;
+        private enum FitStage { Corners, Frame, Interior, Preview }
+        private FitStage stage;
+        private OpeningGeometry preview;
+        private Vector3 probeRight;
+        private Vector3 probeUp;
+        private readonly RaycastHit[] probeHits = new RaycastHit[64];
 
         public bool Active { get; private set; }
+        public bool HasPreview => Active && stage == FitStage.Preview;
         public string Status { get; private set; } = "Select ONE Barricade Slot, then choose a fitting mode.";
 
         public void Begin(bool resizeToOpening, float edgeInset, float depth)
@@ -39,9 +46,20 @@ namespace LevelEditorPlus.Features
             depthOffset = depth;
             upright = Core.ModuleSettings.Data.UprightSlotFitting;
             pointCount = 0;
+            stage = FitStage.Corners;
+            preview = null;
             Active = true;
             GLRenderer.render += Render;
             Prompt();
+        }
+
+        public void BeginAuto(float edgeInset, float depth)
+        {
+            Begin(true, edgeInset, depth);
+            if (!Active)
+                return;
+            stage = FitStage.Frame;
+            Status = $"Aim at the solid FRONT face of the frame; press {Keybinds.Label(ShortcutAction.PickCorner)}.\nThen pick inside the opening. No changes until confirmed.";
         }
 
         public void Cancel()
@@ -49,6 +67,7 @@ namespace LevelEditorPlus.Features
             if (Active)
             {
                 Active = false;
+                preview = null;
                 GLRenderer.render -= Render;
                 Status = "Fitting cancelled. No changes made.";
             }
@@ -62,6 +81,15 @@ namespace LevelEditorPlus.Features
             UnturnedLog.warn($"[{Nexus.Name}] Fit slot: {message}");
         }
 
+        public static bool IsSlotSelected()
+        {
+            Transform selected = SelectionTools.Primary;
+            if (!EditorObjects.isBuilding || SelectionTools.Count != 1 || selected == null)
+                return false;
+            LevelObjects.getAssetEditor(selected, out ObjectAsset asset, out _);
+            return asset != null && SlotVisualizer.IsCustomSlot(asset.GUID);
+        }
+
         private bool TryGetSlot(out Transform root, out BoxCollider collider)
         {
             root = null;
@@ -72,8 +100,7 @@ namespace LevelEditorPlus.Features
                 return false;
             }
             root = SelectionTools.Primary;
-            LevelObjects.getAssetEditor(root, out ObjectAsset asset, out _);
-            if (asset == null || !SlotVisualizer.IsCustomSlot(asset.GUID))
+            if (!IsSlotSelected())
             {
                 Report("Select a standalone Barricade Slot, not the building or a barricade.");
                 return false;
@@ -138,9 +165,42 @@ namespace LevelEditorPlus.Features
                 Report($"Move onto the frame, release right mouse, then press {Keybinds.Label(ShortcutAction.PickCorner)}.");
                 return;
             }
+            if (HasPreview)
+            {
+                ConfirmPreview();
+                return;
+            }
+            if (stage == FitStage.Interior)
+            {
+                DetectOpening();
+                return;
+            }
             if (!TryRaycast(out Vector3 hit, out Vector3 normal))
             {
                 Report($"No surface under cursor. Aim at the frame edge; press {Keybinds.Label(ShortcutAction.PickCorner)} again.");
+                return;
+            }
+            if (stage == FitStage.Frame)
+            {
+                if (upright && Mathf.Abs(normal.y) > 0.01f)
+                {
+                    Report("Auto-fit needs a vertical FRONT frame face. Disable Upright for hatches/slopes, or use manual fitting.");
+                    return;
+                }
+                firstNormal = upright ? new Vector3(normal.x, 0f, normal.z).normalized : normal.normalized;
+                Vector3 height = upright ? Vector3.up :
+                    (HeightAxis(slot) == 2 ? slot.transform.forward : slot.transform.up);
+                probeUp = Vector3.ProjectOnPlane(height, firstNormal).normalized;
+                if (probeUp.sqrMagnitude < 0.5f)
+                {
+                    Report("Slot height points into this face. Rotate the slot to match the opening, or use manual fitting.");
+                    return;
+                }
+                probeRight = Vector3.Cross(probeUp, firstNormal).normalized;
+                points[0] = hit;
+                pointCount = 1;
+                stage = FitStage.Interior;
+                Status = $"Aim INSIDE the empty opening; press {Keybinds.Label(ShortcutAction.PickCorner)}.\nUse the same frame face. Closed/obstructed openings need manual fitting.";
                 return;
             }
             if (pointCount == 0)
@@ -161,6 +221,70 @@ namespace LevelEditorPlus.Features
             {
                 Prompt();
             }
+        }
+
+        private void DetectOpening()
+        {
+            Camera camera = MainCamera.instance;
+            if (camera == null)
+            {
+                Report("No editor camera available. Auto-fit has not changed the slot.");
+                return;
+            }
+            Ray ray = camera.ScreenPointToRay(Input.mousePosition);
+            float denominator = Vector3.Dot(ray.direction, firstNormal);
+            float distance = Mathf.Abs(denominator) < 0.1f ? -1f :
+                Vector3.Dot(points[0] - ray.origin, firstNormal) / denominator;
+            if (distance < 0f || distance > 2048f)
+            {
+                Report("Face the opening directly and pick inside it again.");
+                return;
+            }
+            try
+            {
+                preview = OpeningDetector.Detect(ToNumerics(ray.GetPoint(distance)),
+                    ToNumerics(probeRight), ToNumerics(probeUp), ProbeSolid, inset, depthOffset);
+            }
+            catch (ArgumentException e)
+            {
+                Report(e.Message + "\nPick inside again, or choose manual Fit + Center.");
+                return;
+            }
+            catch (InvalidOperationException e)
+            {
+                Report(e.Message);
+                return;
+            }
+            stage = FitStage.Preview;
+            Status = $"Preview: {preview.Width:0.###} x {preview.Height:0.###} m. Check the cyan outline.\n{Keybinds.Label(ShortcutAction.PickCorner)} / Confirm applies; {Keybinds.Label(ShortcutAction.CancelFit)} cancels. Vanilla item size is unchanged.";
+        }
+
+        private bool ProbeSolid(NVector3 point)
+        {
+            // Probe only a shallow slab at the picked face, not the far wall
+            // visible through the opening.
+            Vector3 origin = ToUnity(point) + firstNormal * 0.05f;
+            int count = Physics.RaycastNonAlloc(origin, -firstNormal, probeHits, 0.2f,
+                RayMasks.EDITOR_WORLD, QueryTriggerInteraction.Ignore);
+            if (count == probeHits.Length)
+                throw new InvalidOperationException("Too many overlapping colliders for reliable auto-fit. Use manual Fit + Center.");
+            for (int i = 0; i < count; i++)
+            {
+                Transform hit = probeHits[i].transform;
+                if (hit != null && !hit.IsChildOf(target))
+                    return true;
+            }
+            return false;
+        }
+
+        public void ConfirmPreview()
+        {
+            if (!HasPreview)
+            {
+                Report("Detect an opening before confirming its preview.");
+                return;
+            }
+            Apply(preview);
         }
 
         private void Prompt()
@@ -216,21 +340,29 @@ namespace LevelEditorPlus.Features
                 return;
             }
 
-            if (!TryGetSlot(out Transform current, out BoxCollider currentSlot) ||
-                current != target || currentSlot != slot)
+            Apply(opening);
+        }
+
+        private void Apply(OpeningGeometry opening)
+        {
+            if (!TryGetSlot(out Transform current, out BoxCollider currentSlot))
             {
                 string error = Status;
                 Cancel();
                 Report(error);
                 return;
             }
+            if (current != target || currentSlot != slot)
+            {
+                Cancel();
+                Report("Selection or slot changed. Fitting cancelled without changes.");
+                return;
+            }
             try
             {
                 // Support both original Y-up and corrected Z-up prefabs. Hatch
                 // height is its second in-plane axis, not its thickness.
-                int heightAxis = slot.name == "Hatch"
-                    ? (slot.size.y > slot.size.z ? 1 : 2)
-                    : (slot.size.z > slot.size.y ? 2 : 1);
+                int heightAxis = HeightAxis(slot);
                 Vector3 nativeSize = new Vector3(
                     target.InverseTransformVector(slot.transform.TransformVector(Vector3.right * slot.size.x)).magnitude,
                     target.InverseTransformVector(slot.transform.TransformVector(Vector3.up * slot.size.y)).magnitude,
@@ -253,6 +385,7 @@ namespace LevelEditorPlus.Features
             EditorObjects.applySelection();
             EditorObjects.calculateHandleOffsets();
             Active = false;
+            preview = null;
             GLRenderer.render -= Render;
             Status = resize
                 ? $"Fitted and centered: {opening.Width:0.###} x {opening.Height:0.###} m.\nCtrl+Z undoes. Flip facing if needed."
@@ -263,6 +396,10 @@ namespace LevelEditorPlus.Features
             }
             UnturnedLog.info($"[{Nexus.Name}] {Status}");
         }
+
+        private static int HeightAxis(BoxCollider collider) => collider.name == "Hatch"
+            ? (collider.size.y > collider.size.z ? 1 : 2)
+            : (collider.size.z > collider.size.y ? 2 : 1);
 
         public void FlipFacing()
         {
@@ -296,6 +433,18 @@ namespace LevelEditorPlus.Features
             try
             {
                 GL.Color(Color.cyan);
+                if (HasPreview)
+                {
+                    Vector3 center = ToUnity(preview.Center);
+                    Vector3 halfWidth = ToUnity(preview.Right) * (preview.Width * 0.5f);
+                    Vector3 halfHeight = ToUnity(preview.Up) * (preview.Height * 0.5f);
+                    Line(center - halfWidth - halfHeight, center + halfWidth - halfHeight);
+                    Line(center + halfWidth - halfHeight, center + halfWidth + halfHeight);
+                    Line(center + halfWidth + halfHeight, center - halfWidth + halfHeight);
+                    Line(center - halfWidth + halfHeight, center - halfWidth - halfHeight);
+                    Line(center, center + ToUnity(preview.Normal) * 0.3f);
+                    return;
+                }
                 for (int i = 0; i < pointCount; i++)
                 {
                     Vector3 p = points[i];

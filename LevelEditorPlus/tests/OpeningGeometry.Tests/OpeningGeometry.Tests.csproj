@@ -3,9 +3,12 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\LevelEditorPlus\Features\OpeningGeometry.cs" Link="OpeningGeometry.cs" />
+    <Compile Include="..\..\src\LevelEditorPlus\Features\OpeningDetector.cs" Link="OpeningDetector.cs" />
+    <Compile Include="..\..\src\LevelEditorPlus\Features\OpeningFitter.cs" Link="OpeningFitter.cs" />
+    <Compile Include="..\..\src\LevelEditorPlus\UI\OpeningFitWindow.cs" Link="OpeningFitWindow.cs" />
   </ItemGroup>
 </Project>

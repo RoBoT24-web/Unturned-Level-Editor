@@ -23,7 +23,7 @@ namespace LevelEditorPlus.Features
         }
 
         private float lastWatch;
-        private float lastSignature = float.NaN;
+        private string lastSnapshot;
 
         private static string FilePath
         {
@@ -70,7 +70,7 @@ namespace LevelEditorPlus.Features
                         }
                     }
                 }
-                lastSignature = ComputeSignature();
+                lastSnapshot = SerializeClipboard();
             }
             catch (Exception e)
             {
@@ -147,61 +147,46 @@ namespace LevelEditorPlus.Features
             }
             lastWatch = Time.realtimeSinceStartup;
 
-            float signature = ComputeSignature();
-            if (!signature.Equals(lastSignature))
-            {
-                lastSignature = signature;
-                Save();
-            }
-        }
-
-        private static float ComputeSignature()
-        {
-            List<EditorCopy> copies = EditorObjects.copies;
-            if (copies == null)
-            {
-                return -1f;
-            }
-            float sig = copies.Count * 31f;
-            foreach (EditorCopy c in copies)
-            {
-                sig += c.position.x + c.position.y * 7f + c.position.z * 13f;
-            }
-            return sig;
-        }
-
-        private static void Save()
-        {
             try
             {
-                List<EditorCopy> copies = EditorObjects.copies;
-                if (copies == null)
+                string snapshot = SerializeClipboard();
+                if (snapshot != null && snapshot != lastSnapshot)
                 {
-                    return;
+                    File.WriteAllText(FilePath, snapshot);
+                    lastSnapshot = snapshot;
                 }
-                var entries = new List<ClipEntry>(copies.Count);
-                foreach (EditorCopy c in copies)
-                {
-                    Asset asset = (Asset)c.objectAsset ?? c.itemAsset;
-                    if (asset == null)
-                    {
-                        continue;
-                    }
-                    entries.Add(new ClipEntry
-                    {
-                        Guid = asset.GUID.ToString("N"),
-                        IsItem = c.itemAsset != null,
-                        PX = c.position.x, PY = c.position.y, PZ = c.position.z,
-                        RX = c.rotation.x, RY = c.rotation.y, RZ = c.rotation.z, RW = c.rotation.w,
-                        SX = c.scale.x, SY = c.scale.y, SZ = c.scale.z,
-                    });
-                }
-                File.WriteAllText(FilePath, JsonConvert.SerializeObject(entries));
             }
             catch (Exception e)
             {
                 UnturnedLog.exception(e, $"[{Nexus.Name}] Failed to save clipboard:");
             }
+        }
+
+        private static string SerializeClipboard()
+        {
+            List<EditorCopy> copies = EditorObjects.copies;
+            if (copies == null)
+            {
+                return null;
+            }
+            var entries = new List<ClipEntry>(copies.Count);
+            foreach (EditorCopy c in copies)
+            {
+                Asset asset = (Asset)c.objectAsset ?? c.itemAsset;
+                if (asset == null)
+                {
+                    continue;
+                }
+                entries.Add(new ClipEntry
+                {
+                    Guid = asset.GUID.ToString("N"),
+                    IsItem = c.itemAsset != null,
+                    PX = c.position.x, PY = c.position.y, PZ = c.position.z,
+                    RX = c.rotation.x, RY = c.rotation.y, RZ = c.rotation.z, RW = c.rotation.w,
+                    SX = c.scale.x, SY = c.scale.y, SZ = c.scale.z,
+                });
+            }
+            return JsonConvert.SerializeObject(entries);
         }
     }
 }

@@ -1,5 +1,8 @@
 using System.Numerics;
 using LevelEditorPlus.Features;
+using LevelEditorPlus.Core;
+using SDG.Unturned;
+using UVector3 = UnityEngine.Vector3;
 
 int checks = 0;
 void Near(float actual, float expected, string message)
@@ -157,4 +160,258 @@ foreach (float angle in new[] { 0f, 0.63f, 1.57f, -2.1f })
 opening = OpeningGeometry.Measure(a, b, c, 0, 0, Vector3.UnitZ);
 checks++;
 if (opening.IgnoredSurfaceDirection) throw new Exception("Good front-face normal must remain authoritative");
+
+// Probe real rectangular boundaries rather than assuming the seed is centered.
+foreach (Quaternion orientation in new[] { Quaternion.Identity, yaw, rotation,
+    Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2) })
+{
+    Vector3 origin = new(10, 20, -30);
+    Vector3 ToWorld(Vector3 p) => origin + Vector3.Transform(p, orientation);
+    Vector3 ToLocal(Vector3 p) => Vector3.Transform(p - origin, Quaternion.Inverse(orientation));
+    bool Frame(Vector3 p)
+    {
+        Vector3 local = ToLocal(p);
+        return local.X <= 0 || local.X >= 2.137f || local.Y <= 0 || local.Y >= 3.053f;
+    }
+    foreach (Vector3 seed in new[] { new Vector3(0.3f, 0.4f, 0), new Vector3(1.8f, 2.7f, 0) })
+    {
+        opening = OpeningDetector.Detect(ToWorld(seed),
+            Vector3.Transform(Vector3.UnitX, orientation), Vector3.Transform(Vector3.UnitY, orientation),
+            Frame, 0.005f, -0.1f);
+        checks++;
+        if (Math.Abs(opening.Width - 2.127f) > 0.002f ||
+            Math.Abs(opening.Height - 3.043f) > 0.002f ||
+            Vector3.Distance(opening.Center, ToWorld(new(1.0685f, 1.5265f, -0.1f))) > 0.002f)
+            throw new Exception("Auto-fit must measure off-center, rotated and horizontal openings within 2 mm.");
+        VectorNear(opening.Normal, Vector3.Transform(Vector3.UnitZ, orientation), "auto-fit facing");
+    }
+}
+
+void RejectDetection(Func<Vector3, bool> frame, string message, float inset = 0)
+{
+    checks++;
+    try { OpeningDetector.Detect(new(1, 1, 0), Vector3.UnitX, Vector3.UnitY, frame, inset, 0); }
+    catch (ArgumentException) { return; }
+    throw new Exception($"Expected detection rejection: {message}");
+}
+bool Rectangle(Vector3 p) => p.X <= 0 || p.X >= 2 || p.Y <= 0 || p.Y >= 3;
+RejectDetection(_ => true, "closed opening / pick on frame");
+RejectDetection(_ => false, "no enclosing frame");
+RejectDetection(p => p.X <= 0 || p.X >= 2 || p.Y >= 3, "missing bottom edge");
+RejectDetection(p => Rectangle(p) && !(p.X < 0 && p.Y > 1.4f && p.Y < 1.8f),
+    "broken jamb away from seed scan");
+RejectDetection(p => Rectangle(p) || (p.X > 1.45f && p.X < 1.85f && p.Y > 1.7f && p.Y < 2.1f),
+    "obstruction away from seed scans");
+RejectDetection(p => p.X <= 0 || p.X >= 2 || p.Y <= 0 ||
+    p.Y >= 3 - 0.5f * p.X, "sloped / non-rectangular top edge");
+RejectDetection(Rectangle, "inset removes opening", 1);
+checks++;
+try
+{
+    OpeningDetector.Detect(new(1, 1, 0), Vector3.UnitX, Vector3.UnitX, Rectangle, 0, 0);
+    throw new Exception("Auto-fit must reject parallel probe axes.");
+}
+catch (ArgumentException) { }
+
+UnityEngine.Transform target = new()
+{
+    position = new(30, 40, 50),
+    localScale = new(1.2f, 1.5f, 2.4f)
+};
+UnityEngine.BoxCollider collider = new()
+{
+    transform = target, center = new(0, 1, 0), size = new(1.1f, 2, 0.15f)
+};
+target.Colliders = new[] { collider };
+SelectionTools.Primary = target;
+UnityEngine.Transform frame = new();
+UnityEngine.RaycastHit solidHit = new() { transform = frame, normal = UVector3.forward };
+UnityEngine.RaycastHit[] SolidProbe(UVector3 p, UVector3 direction) =>
+    Rectangle(new(p.x, p.y, 0)) ? new[] { solidHit } : Array.Empty<UnityEngine.RaycastHit>();
+
+void Check(bool condition, string message)
+{
+    checks++;
+    if (!condition) throw new Exception(message);
+}
+void Pick(OpeningFitter fitter, UVector3 point, LevelEditorPlus.UI.OpeningFitWindow window = null,
+    bool cursorOverTools = false)
+{
+    UnityEngine.Physics.Hits = new[]
+    {
+        new UnityEngine.RaycastHit { transform = frame, point = point, normal = UVector3.forward, distance = 5 }
+    };
+    MainCamera.instance.Ray = new() { origin = point + UVector3.forward * 5, direction = -UVector3.forward };
+    Keybinds.PressedAction = ShortcutAction.PickCorner;
+    if (window == null)
+        fitter.Update(cursorOverTools);
+    else
+        window.UpdateFitting(cursorOverTools);
+    Keybinds.PressedAction = null;
+}
+void AutoPreview(OpeningFitter fitter)
+{
+    UnityEngine.Physics.Probe = SolidProbe;
+    fitter.BeginAuto(0.005f, -0.1f);
+    Pick(fitter, new(0, 1.5f, 0));
+    Pick(fitter, new(0.7f, 1.2f, 0));
+    Check(fitter.HasPreview, "Two auto-fit picks must produce a confirmation preview.");
+}
+
+using (OpeningFitter fitter = new())
+{
+    AutoPreview(fitter);
+    VectorNear(target.position.Numeric, new(30, 40, 50), "preview does not move slot");
+    VectorNear(target.localScale.Numeric, new(1.2f, 1.5f, 2.4f), "preview does not resize slot");
+    Check(EditorObjects.UndoRecords == 0 && EditorObjects.Applied == 0, "Preview must not record or apply an edit.");
+    SDG.Framework.Rendering.GLRenderer.Draw();
+    Check(UnityEngine.GL.Vertices.Count == 10, "Preview must draw four rectangle edges and a facing line.");
+    Check(Math.Abs((UnityEngine.GL.Vertices[1] - UnityEngine.GL.Vertices[0]).magnitude - 1.99f) < 0.002f,
+        "Preview width must match inset-adjusted detected opening.");
+    fitter.Cancel();
+    fitter.ConfirmPreview();
+    Check(!fitter.Active && !fitter.HasPreview && EditorObjects.Applied == 0,
+        "Cancellation and confirmation without a preview must leave the slot untouched.");
+    SDG.Framework.Rendering.GLRenderer.Draw();
+    Check(UnityEngine.GL.Vertices.Count == 10, "Cancelled fitter must unsubscribe from rendering.");
+
+    AutoPreview(fitter);
+    fitter.ConfirmPreview();
+    Check(!fitter.Active && !fitter.HasPreview && EditorObjects.UndoRecords == 1 && EditorObjects.Applied == 1,
+        "Confirmation must apply exactly one undoable transform.");
+    Check(Vector3.Distance(collider.transform.TransformPoint(collider.center).Numeric, new(1, 1.5f, -0.1f)) < 0.002f,
+        "Confirmed collider center must match the opening including depth, not the prefab pivot.");
+    Check(Math.Abs(target.localScale.x * collider.size.x - 1.99f) < 0.002f &&
+        Math.Abs(target.localScale.y * collider.size.y - 2.99f) < 0.002f,
+        "Confirmed collider dimensions must match preview dimensions.");
+    Near(target.localScale.z, 2.4f, "auto-fit preserves existing thickness scale");
+
+    AutoPreview(fitter);
+    UnityEngine.Transform replacementSlot = new();
+    replacementSlot.Colliders = new[]
+    {
+        new UnityEngine.BoxCollider { transform = replacementSlot, size = new(1.1f, 2, 0.15f) }
+    };
+    SelectionTools.Primary = replacementSlot;
+    fitter.ConfirmPreview();
+    Check(!fitter.Active && EditorObjects.Applied == 1 && fitter.Status.Contains("Selection or slot changed"),
+        "Changed selection must invalidate confirmation and report the reason.");
+    SelectionTools.Primary = target;
+
+    UnityEngine.Physics.Probe = (_, _) => Array.Empty<UnityEngine.RaycastHit>();
+    fitter.BeginAuto(0, 0);
+    Pick(fitter, new(0, 1.5f, 0));
+    Pick(fitter, new(1, 1, 0));
+    Check(fitter.Active && !fitter.HasPreview && EditorObjects.Applied == 1 &&
+        fitter.Status.Contains("No enclosing frame"), "Detection failure must be explicit and leave the slot unchanged.");
+
+    UnityEngine.Physics.Probe = (_, _) => Enumerable.Repeat(solidHit, 64).ToArray();
+    Pick(fitter, new(1, 1, 0));
+    Check(!fitter.HasPreview && fitter.Status.Contains("Too many overlapping colliders") && EditorObjects.Applied == 1,
+        "Full raycast buffer must reject detection instead of silently trusting truncated results.");
+
+    // The existing three-corner workflow remains available after auto-fit failure.
+    fitter.Begin(true, 0, 0);
+    Pick(fitter, new(0, 0, 0));
+    Pick(fitter, new(2, 0, 0));
+    Pick(fitter, new(0, 3, 0));
+    Check(!fitter.Active && EditorObjects.Applied == 2 && EditorObjects.UndoRecords == 2,
+        "Manual fitting must still apply after three corner picks.");
+    VectorNear(collider.transform.TransformPoint(collider.center).Numeric, new(1, 1.5f, 0), "manual fit center preserved");
+
+    AutoPreview(fitter);
+    Pick(fitter, new(1, 1, 0));
+    Check(!fitter.Active && EditorObjects.Applied == 3 && EditorObjects.UndoRecords == 3,
+        "Pick shortcut must confirm a preview with exactly one undoable edit.");
+    AutoPreview(fitter);
+    Keybinds.PressedAction = ShortcutAction.CancelFit;
+    fitter.Update(false);
+    Keybinds.PressedAction = null;
+    Check(!fitter.Active && !fitter.HasPreview && EditorObjects.Applied == 3,
+        "Cancel shortcut must discard a preview without applying it.");
+}
+using (OpeningFitter fitter = new())
+{
+    LevelEditorPlus.UI.OpeningFitWindow window = new(new(), fitter);
+    ISleekFloat32Field[] fields = window.Content.Children.OfType<ISleekFloat32Field>().ToArray();
+    fields[0].Value = 0.01f;
+    fields[1].Value = -0.08f;
+    UnityEngine.Physics.Probe = SolidProbe;
+    Pick(fitter, new(0, 1.5f, 0), window);
+    Check(window.IsVisible && fitter.Active && !fitter.HasPreview,
+        "First pick must start auto-fit and pick the frame even when the window was closed.");
+    Pick(fitter, new(1, 1, 0), window);
+    Check(window.IsVisible && fitter.HasPreview && EditorObjects.Applied == 3,
+        "Always-on auto-fit must produce a preview after two picks without a start button or shortcut.");
+    SDG.Framework.Rendering.GLRenderer.Draw();
+    Check(Math.Abs((UnityEngine.GL.Vertices[1] - UnityEngine.GL.Vertices[0]).magnitude - 1.98f) < 0.002f &&
+        Math.Abs(UnityEngine.GL.Vertices[0].z + 0.08f) < 0.002f,
+        "Default auto-fit must use the current inset and depth fields.");
+
+    window.Content.Children.OfType<ISleekButton>().Single(b => b.Text == "Manual Fit + Center").Click();
+    Check(!ModuleSettings.Data.AutoFitSlots && ModuleSettings.Dirty,
+        "Choosing manual fit must disable automatic starting and mark the preference for saving.");
+    Pick(fitter, new(0, 0, 0));
+    Pick(fitter, new(2, 0, 0));
+    Check(fitter.Active && !fitter.HasPreview && EditorObjects.Applied == 3,
+        "Manual button must retain three-corner fitting rather than auto-fit.");
+    Pick(fitter, new(0, 3, 0));
+    Check(!fitter.Active && EditorObjects.Applied == 4, "Manual button must still complete a fit.");
+
+    window.StartFit();
+    Pick(fitter, new(0, 1.5f, 0));
+    Pick(fitter, new(1, 1, 0));
+    Check(fitter.Active && !fitter.HasPreview && EditorObjects.Applied == 4,
+        "Explicit start must respect the chosen manual mode rather than overriding it.");
+    fitter.Cancel();
+    window.SetWindowVisible(false);
+    Pick(fitter, new(0, 1.5f, 0), window);
+    Check(!fitter.Active && !window.IsVisible, "F10 must not auto-start after choosing manual mode.");
+    LevelEditorPlus.UI.OpeningFitWindow reopened = new(new(), fitter);
+    Pick(fitter, new(0, 1.5f, 0), reopened);
+    Check(!fitter.Active && !reopened.IsVisible, "Recreating the window must retain the chosen manual preference.");
+
+    window.Content.Children.OfType<ISleekToggle>().Last().Change(true);
+    Pick(fitter, new(0, 1.5f, 0), window);
+    Pick(fitter, new(1, 1, 0), window);
+    Pick(fitter, new(1, 1, 0), window);
+    Check(!fitter.Active && EditorObjects.Applied == 5 && ModuleSettings.Data.AutoFitSlots,
+        "Re-enabling always auto-fit must allow three F10 presses to apply exactly one fit.");
+
+    UnityEngine.Transform nextSlot = new();
+    nextSlot.Colliders = new[]
+    {
+        new UnityEngine.BoxCollider { transform = nextSlot, size = new(1.1f, 2, 0.15f) }
+    };
+    SelectionTools.Primary = nextSlot;
+    Pick(fitter, new(0, 1.5f, 0), window);
+    Pick(fitter, new(1, 1, 0), window);
+    Check(fitter.HasPreview && EditorObjects.Applied == 5,
+        "Selecting another slot must allow immediate auto-fit picks without restarting the tool.");
+    Keybinds.PressedAction = ShortcutAction.CancelFit;
+    window.UpdateFitting(false);
+    Keybinds.PressedAction = null;
+    Check(!fitter.Active && ModuleSettings.Data.AutoFitSlots,
+        "Cancelling a fit must leave always auto-fit enabled for the next opening.");
+
+    window.SetWindowVisible(false);
+    Pick(fitter, new(0, 1.5f, 0), window, true);
+    Check(!fitter.Active && !window.IsVisible, "Auto-start must not run while the cursor is over another tool.");
+    EditorInteract.isFlying = true;
+    Pick(fitter, new(0, 1.5f, 0), window);
+    EditorInteract.isFlying = false;
+    Check(!fitter.Active, "Auto-start must not run while flying.");
+    Glazier.Get().ShouldGameProcessInput = false;
+    Pick(fitter, new(0, 1.5f, 0), window);
+    Glazier.Get().ShouldGameProcessInput = true;
+    Check(!fitter.Active, "Auto-start must respect the game input gate.");
+
+    SelectionTools.Primary = frame;
+    LevelObjects.Overrides[frame] = new();
+    int warnings = UnturnedLog.Warnings.Count;
+    Pick(fitter, new(0, 1.5f, 0), window);
+    Check(!fitter.Active && !window.IsVisible && UnturnedLog.Warnings.Count == warnings,
+        "Always auto-fit must ignore picks when the selected object is not a custom slot.");
+    SelectionTools.Primary = target;
+}
 Console.WriteLine($"PASS: {checks} opening geometry checks.");

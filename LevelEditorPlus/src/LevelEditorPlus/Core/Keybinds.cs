@@ -36,11 +36,11 @@ namespace LevelEditorPlus.Core
         {
             switch (action)
             {
-                case ShortcutAction.PickCorner: return "Pick corner";
+                case ShortcutAction.PickCorner: return "Pick / confirm fit";
                 case ShortcutAction.CancelFit: return "Cancel fitting";
                 case ShortcutAction.Duplicate: return "Duplicate";
                 case ShortcutAction.PasteAtCursor: return "Paste at cursor";
-                case ShortcutAction.FitAndCenter: return "Fit + Center";
+                case ShortcutAction.FitAndCenter: return "Start fitting";
                 default: return "Flip facing";
             }
 

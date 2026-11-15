@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\LevelEditorPlus\UI\HierarchyWindow.cs" Link="HierarchyWindow.cs" />
+    <Compile Include="..\..\src\LevelEditorPlus\UI\AssetBrowserWindow.cs" Link="AssetBrowserWindow.cs" />
+    <Compile Include="..\..\src\LevelEditorPlus\Features\HierarchyExport.cs" Link="HierarchyExport.cs" />
   </ItemGroup>
 </Project>

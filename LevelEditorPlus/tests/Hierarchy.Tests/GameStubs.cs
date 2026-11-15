@@ -20,6 +20,11 @@ namespace UnityEngine
     }
     public class Camera { public Transform transform = new(); }
     public static class Time { public static float realtimeSinceStartup; }
+    public static class Mathf
+    {
+        public static float Clamp01(float value) => Math.Clamp(value, 0f, 1f);
+        public static int RoundToInt(float value) => (int)MathF.Round(value);
+    }
     public enum KeyCode { LeftControl, RightControl }
     public enum TextAnchor { MiddleLeft }
 }
@@ -28,6 +33,8 @@ namespace SDG.Unturned
 {
     using UnityEngine;
     public enum ESleekSide { RIGHT }
+    public enum ESleekOrientation { HORIZONTAL }
+    public enum EObjectType { LARGE, MEDIUM, SMALL, DECAL, NPC }
     public enum EEditorMessage { FOCUS }
     public class ISleekElement
     {
@@ -41,6 +48,7 @@ namespace SDG.Unturned
         public string Text;
         public TextAnchor TextAlignment;
     }
+    public class ISleekBox : ISleekLabel { public string TooltipText; }
     public class ISleekButton : ISleekLabel
     {
         public string TooltipText;
@@ -50,8 +58,30 @@ namespace SDG.Unturned
     public class ISleekField : ISleekElement
     {
         public string PlaceholderText;
+        public string Text = "";
         public event Action<ISleekField, string> OnTextChanged;
-        public void SetText(string text) => OnTextChanged?.Invoke(this, text);
+        public void SetText(string text) { Text = text; OnTextChanged?.Invoke(this, text); }
+    }
+    public class ISleekSlider : ISleekElement
+    {
+        public ESleekOrientation Orientation;
+        public float Value;
+        public event Action<ISleekSlider, float> OnValueChanged;
+        public void Set(float value) { Value = value; OnValueChanged?.Invoke(this, value); }
+    }
+    public class ISleekImage : ISleekElement
+    {
+        public event Action OnClicked;
+        public void Click() => OnClicked?.Invoke();
+    }
+    public class SleekWrapper : ISleekElement { }
+    public class SleekItemIcon : SleekWrapper
+    {
+        public ItemAsset Asset;
+        public int Width, Height;
+        public SleekItemIcon() => AddChild(new ISleekImage());
+        public void Refresh(ItemAsset asset, int width, int height) { Asset = asset; Width = width; Height = height; }
+        public ISleekElement GetChildAtIndex(int index) => Children[index];
     }
     public class ISleekToggle : ISleekElement
     {
@@ -76,6 +106,8 @@ namespace SDG.Unturned
         public ISleekField CreateStringField() => new();
         public ISleekButton CreateButton() => new();
         public ISleekLabel CreateLabel() => new();
+        public ISleekBox CreateBox() => new();
+        public ISleekSlider CreateSlider() => new();
         public ISleekToggle CreateToggle() => new();
         public ISleekFloat32Field CreateFloat32Field() => new();
     }
@@ -93,9 +125,46 @@ namespace SDG.Unturned
     }
     public static class MainCamera { public static Camera instance = new(); }
     public static class InputEx { public static bool GetKey(KeyCode key) => false; }
-    public class Asset { public string objectName, itemName; }
-    public class LevelObject { public Transform transform; public Asset asset; public int id; }
-    public class LevelBuildableObject { public Transform transform; public Asset asset; public int id; public Vector3 point; }
+    public class AssetOrigin { public string name; }
+    public class Asset
+    {
+        public string objectName, itemName;
+        public string FriendlyName;
+        public ushort id;
+        public Guid GUID;
+        public string type = "Large";
+        public AssetOrigin origin;
+    }
+    public class ObjectAsset : Asset { public new EObjectType type; }
+    public class ItemAsset : Asset { }
+    public class ItemBarricadeAsset : ItemAsset { }
+    public class ItemStructureAsset : ItemAsset { }
+    public static class Assets
+    {
+        public static readonly List<ObjectAsset> Objects = new();
+        public static readonly List<ItemAsset> Items = new();
+        public static void find(List<ObjectAsset> results) => results.AddRange(Objects);
+        public static void find(List<ItemAsset> results) => results.AddRange(Items);
+    }
+    public class EditorObjectSearchFilter
+    {
+        private readonly string search;
+        private EditorObjectSearchFilter(string search) => this.search = search;
+        public static EditorObjectSearchFilter parse(string search) => new(search);
+        public bool ignores(Asset asset) => !asset.FriendlyName.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
+    public static class EditorLevelObjectsUI { public static ISleekBox selectedBox = new(); }
+    public class LevelObject { public Transform transform; public Asset asset; public ushort id; public Guid GUID; }
+    public class LevelBuildableObject { public Transform transform; public Asset asset; public ushort id; public Vector3 point; }
+    public class LevelInfo { public string path; }
+    public static class Level { public static LevelInfo info; }
+    public static class UnturnedLog
+    {
+        public static Exception LastException;
+        public static string LastInfo;
+        public static void info(string text) => LastInfo = text;
+        public static void exception(Exception e, string text) => LastException = e;
+    }
     public static class EditorUI
     {
         public static string LastHint;
@@ -104,9 +173,16 @@ namespace SDG.Unturned
     public static class EditorObjects
     {
         public static bool isBuilding = true;
+        public static ObjectAsset selectedObjectAsset;
+        public static ItemAsset selectedItemAsset;
         public static void addSelection(Transform transform) =>
             LevelEditorPlus.Features.SelectionTools.Selected.Add(transform);
     }
+}
+
+namespace LevelEditorPlus
+{
+    public static class Nexus { public const string Name = "LevelEditorPlus"; }
 }
 
 namespace LevelEditorPlus.Features
@@ -130,10 +206,30 @@ namespace LevelEditorPlus.Features
     }
 }
 
+namespace LevelEditorPlus.Core
+{
+    public static class ModuleSettings
+    {
+        public class SettingsData { public int AssetPreviewSize = 32; }
+        public static SettingsData Data = new();
+        public static int DirtyCount;
+        public static void MarkDirty() => DirtyCount++;
+    }
+}
+
 namespace LevelEditorPlus.UI
 {
     using SDG.Unturned;
     public class WindowManager { }
+    public static class ObjectAssetPreview
+    {
+        public static ISleekElement Create(ObjectAsset asset, int size, System.Action onClicked)
+        {
+            var image = new ISleekImage();
+            image.OnClicked += onClicked;
+            return image;
+        }
+    }
     public abstract class DraggableWindow
     {
         protected readonly ISleekElement content = new();

@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
 using LevelEditorPlus.Features;
 using SDG.Unturned;
 using UnityEngine;
@@ -141,9 +144,32 @@ namespace LevelEditorPlus.UI
             };
             content.AddChild(nearest);
 
+            ISleekButton exportDetailed = Glazier.Get().CreateButton();
+            exportDetailed.PositionOffset_X = 4f;
+            exportDetailed.PositionOffset_Y = 116f;
+            exportDetailed.SizeScale_X = 0.5f;
+            exportDetailed.SizeOffset_X = -6f;
+            exportDetailed.SizeOffset_Y = 24f;
+            exportDetailed.Text = "Export detailed";
+            exportDetailed.TooltipText = "Export every map placement to CSV, ignoring filters. Includes an overall missing-asset status file.";
+            exportDetailed.OnClicked += (b) => ExportMap(true);
+            content.AddChild(exportDetailed);
+
+            ISleekButton exportSummary = Glazier.Get().CreateButton();
+            exportSummary.PositionScale_X = 0.5f;
+            exportSummary.PositionOffset_X = 2f;
+            exportSummary.PositionOffset_Y = 116f;
+            exportSummary.SizeScale_X = 0.5f;
+            exportSummary.SizeOffset_X = -6f;
+            exportSummary.SizeOffset_Y = 24f;
+            exportSummary.Text = "Export summary";
+            exportSummary.TooltipText = "Export quantities by asset for the entire map to CSV, ignoring filters.";
+            exportSummary.OnClicked += (b) => ExportMap(false);
+            content.AddChild(exportSummary);
+
             countLabel = Glazier.Get().CreateLabel();
             countLabel.PositionOffset_X = 4f;
-            countLabel.PositionOffset_Y = 116f;
+            countLabel.PositionOffset_Y = 144f;
             countLabel.SizeScale_X = 1f;
             countLabel.SizeOffset_X = -8f;
             countLabel.SizeOffset_Y = 20f;
@@ -153,11 +179,11 @@ namespace LevelEditorPlus.UI
 
             list = new SleekList<Row>();
             list.PositionOffset_X = 4f;
-            list.PositionOffset_Y = 140f;
+            list.PositionOffset_Y = 168f;
             list.SizeScale_X = 1f;
             list.SizeScale_Y = 1f;
             list.SizeOffset_X = -8f;
-            list.SizeOffset_Y = -144f;
+            list.SizeOffset_Y = -172f;
             list.itemHeight = 24;
             list.itemPadding = 1;
             list.onCreateElement = CreateRow;
@@ -228,6 +254,49 @@ namespace LevelEditorPlus.UI
         {
             filter = text ?? string.Empty;
             ApplyFilter();
+        }
+
+        private void ExportMap(bool detailed)
+        {
+            if (Level.info == null || string.IsNullOrEmpty(Level.info.path))
+            {
+                EditorUI.hint(EEditorMessage.FOCUS, "Open a map before exporting its hierarchy.");
+                return;
+            }
+            try
+            {
+                List<HierarchyExport.Entry> entries = HierarchyExport.Collect();
+                string directory = Path.Combine(Level.info.path, "HierarchyExports");
+                Directory.CreateDirectory(directory);
+                string kind = detailed ? "detailed" : "summary";
+                string stem = Path.Combine(directory, $"hierarchy-{kind}-{DateTime.Now.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture)}");
+                string csvPath = stem + ".csv";
+                int missing = 0;
+                using (var writer = new StreamWriter(new FileStream(csvPath, FileMode.CreateNew, FileAccess.Write), new UTF8Encoding(true)))
+                {
+                    if (detailed)
+                        missing = HierarchyExport.WriteDetailed(writer, entries);
+                    else
+                        HierarchyExport.WriteSummary(writer, entries);
+                }
+                if (detailed)
+                {
+                    using (var writer = new StreamWriter(new FileStream(stem + ".status.txt", FileMode.CreateNew, FileAccess.Write), new UTF8Encoding(true)))
+                    {
+                        writer.WriteLine($"Total placements: {entries.Count.ToString(CultureInfo.InvariantCulture)}");
+                        writer.WriteLine($"Missing asset placements: {missing.ToString(CultureInfo.InvariantCulture)}");
+                    }
+                }
+                UnturnedLog.info($"[{Nexus.Name}] Exported hierarchy to {csvPath}" +
+                    (detailed ? $" (missing asset placements: {missing}; status: {stem}.status.txt)" : string.Empty));
+                EditorUI.hint(EEditorMessage.FOCUS, $"Exported {kind} to the map's HierarchyExports folder." +
+                    (detailed ? $" Missing asset placements: {missing}." : string.Empty));
+            }
+            catch (Exception e)
+            {
+                UnturnedLog.exception(e, $"[{Nexus.Name}] Failed to export hierarchy:");
+                EditorUI.hint(EEditorMessage.FOCUS, "Hierarchy export failed; files may be incomplete. See Console for details.");
+            }
         }
 
         private void Rebuild()

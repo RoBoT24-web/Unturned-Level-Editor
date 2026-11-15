@@ -9,8 +9,7 @@ namespace LevelEditorPlus.Features
     /// <summary>
     /// Draws wireframe outlines + facing arrows for barricade slot colliders
     /// ("Door"/"Gate"/"Slot"/"Hatch" children) so invisible slot objects are
-    /// visible in the editor. Our custom BarricadeSlots assets are always shown;
-    /// vanilla slots are shown within a radius of the camera.
+    /// visible in the editor. Tracks the nearest slots within the camera radius.
     /// </summary>
     public static class SlotVisualizer
     {
@@ -19,13 +18,14 @@ namespace LevelEditorPlus.Features
             public BoxCollider Collider;
             public Color Color;
             public bool UseRightAxisTest; // window "Slot" children test the right axis
+            public float DistanceSquared;
         }
 
         private const int MaxTracked = 512;
-        private const float VanillaScanRadius = 100f;
+        private const float ScanRadius = 50f;
         private const float RefreshInterval = 2f;
 
-        // GUIDs of the BarricadeSlots asset pack (always outlined, any distance).
+        // GUIDs of the BarricadeSlots asset pack.
         private static readonly HashSet<Guid> CustomSlotGuids = new HashSet<Guid>
         {
             new Guid("87723a88b4064413bcaa587735e84b0d"), // Door
@@ -96,23 +96,15 @@ namespace LevelEditorPlus.Features
         private static void Refresh()
         {
             tracked.Clear();
-            Vector3 cameraPosition = MainCamera.instance != null
-                ? MainCamera.instance.transform.position
-                : Vector3.zero;
+            if (MainCamera.instance == null)
+            {
+                return;
+            }
+            Vector3 cameraPosition = MainCamera.instance.transform.position;
 
             foreach (LevelObject obj in SelectionTools.EnumerateLevelObjects())
             {
-                if (tracked.Count >= MaxTracked)
-                {
-                    break;
-                }
                 if (obj.transform == null || obj.asset == null)
-                {
-                    continue;
-                }
-                bool isCustomSlot = CustomSlotGuids.Contains(obj.asset.GUID);
-                if (!isCustomSlot &&
-                    (obj.transform.position - cameraPosition).sqrMagnitude > VanillaScanRadius * VanillaScanRadius)
                 {
                     continue;
                 }
@@ -130,15 +122,33 @@ namespace LevelEditorPlus.Features
                     {
                         continue;
                     }
-                    tracked.Add(new TrackedSlot
+                    float distanceSquared = (collider.transform.TransformPoint(collider.center) - cameraPosition).sqrMagnitude;
+                    if (distanceSquared > ScanRadius * ScanRadius ||
+                        (tracked.Count == MaxTracked && distanceSquared >= tracked[tracked.Count - 1].DistanceSquared))
+                    {
+                        continue;
+                    }
+
+                    int low = 0;
+                    int high = tracked.Count;
+                    while (low < high)
+                    {
+                        int middle = low + (high - low) / 2;
+                        if (tracked[middle].DistanceSquared <= distanceSquared)
+                            low = middle + 1;
+                        else
+                            high = middle;
+                    }
+                    tracked.Insert(low, new TrackedSlot
                     {
                         Collider = collider,
                         Color = color,
                         UseRightAxisTest = name == "Slot",
+                        DistanceSquared = distanceSquared,
                     });
-                    if (tracked.Count >= MaxTracked)
+                    if (tracked.Count > MaxTracked)
                     {
-                        break;
+                        tracked.RemoveAt(MaxTracked);
                     }
                 }
             }

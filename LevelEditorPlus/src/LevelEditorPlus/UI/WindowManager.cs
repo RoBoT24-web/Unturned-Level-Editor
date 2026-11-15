@@ -115,7 +115,7 @@ namespace LevelEditorPlus.UI
             slotsButton.SizeOffset_X = buttonWidth;
             slotsButton.SizeOffset_Y = buttonHeight;
             slotsButton.Text = SlotVisualizer.Enabled ? "Slots: On" : "Slots: Off";
-            slotsButton.TooltipText = "Toggle wireframe outlines for barricade slot colliders (doors, gates, windows, hatches)";
+            slotsButton.TooltipText = "Toggle outlines for up to 512 nearby slot colliders within 50 m of the camera";
             slotsButton.OnClicked += (b) =>
             {
                 SlotVisualizer.Enabled = !SlotVisualizer.Enabled;
@@ -159,11 +159,7 @@ namespace LevelEditorPlus.UI
             {
                 cursorOverTools |= w.IsVisible && DraggableWindow.IsCursorInside(w);
             }
-            if (!OpeningFit.IsVisible)
-            {
-                openingFitter.Cancel();
-            }
-            openingFitter.Update(cursorOverTools);
+            OpeningFit.UpdateFitting(cursorOverTools);
             if (EditorObjects.isBuilding && !EditorInteract.isFlying)
             {
                 if (Keybinds.Pressed(ShortcutAction.FitAndCenter)) OpeningFit.StartFit();

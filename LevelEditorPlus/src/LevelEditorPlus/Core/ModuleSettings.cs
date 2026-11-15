@@ -21,6 +21,8 @@ namespace LevelEditorPlus.Core
         public Dictionary<string, WindowLayout> Windows = new Dictionary<string, WindowLayout>();
         public bool ShowSlotOutlines = true;
         public bool UprightSlotFitting = true;
+        public bool AutoFitSlots = true;
+        public int AssetPreviewSize = 32;
         public Dictionary<string, KeyBinding> Keybindings = new Dictionary<string, KeyBinding>();
     }
 

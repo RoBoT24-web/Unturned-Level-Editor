@@ -11,9 +11,13 @@ namespace LevelEditorPlus.UI
     /// </summary>
     public class AssetBrowserWindow : DraggableWindow
     {
+        private static readonly int[] PreviewSizes = { 16, 32, 64, 128 };
+
         private readonly ISleekField searchField;
         private readonly ISleekBox currentBox;
         private readonly ISleekLabel countLabel;
+        private readonly ISleekSlider previewSizeSlider;
+        private readonly ISleekLabel previewSizeLabel;
         private readonly SleekList<Asset> list;
 
         private readonly ISleekToggle largeToggle;
@@ -27,12 +31,22 @@ namespace LevelEditorPlus.UI
         private readonly List<ObjectAsset> tempObjects = new List<ObjectAsset>();
         private readonly List<ItemAsset> tempItems = new List<ItemAsset>();
 
+        private int previewSize;
         private string pendingSearch;
         private float pendingSearchTime;
+        private bool pendingPreviewRefresh;
+        private float pendingPreviewRefreshTime;
 
         public AssetBrowserWindow(WindowManager manager)
             : base(manager, "assets", "Asset Browser", 780f, 60f, 360f, 460f, defaultVisible: false)
         {
+            previewSize = NormalizePreviewSize(Core.ModuleSettings.Data.AssetPreviewSize);
+            if (Core.ModuleSettings.Data.AssetPreviewSize != previewSize)
+            {
+                Core.ModuleSettings.Data.AssetPreviewSize = previewSize;
+                Core.ModuleSettings.MarkDirty();
+            }
+
             searchField = Glazier.Get().CreateStringField();
             searchField.PositionOffset_X = 4f;
             searchField.PositionOffset_Y = 4f;
@@ -50,9 +64,39 @@ namespace LevelEditorPlus.UI
             structuresToggle = BuildToggle(212f, "St", "Structures", defaultValue: false);
             npcsToggle = BuildToggle(264f, "N", "NPCs", defaultValue: false);
 
+            ISleekLabel previewSizeTitle = Glazier.Get().CreateLabel();
+            previewSizeTitle.PositionOffset_X = 4f;
+            previewSizeTitle.PositionOffset_Y = 60f;
+            previewSizeTitle.SizeOffset_X = 64f;
+            previewSizeTitle.SizeOffset_Y = 24f;
+            previewSizeTitle.Text = "Preview";
+            previewSizeTitle.TextAlignment = TextAnchor.MiddleLeft;
+            content.AddChild(previewSizeTitle);
+
+            previewSizeSlider = Glazier.Get().CreateSlider();
+            previewSizeSlider.PositionOffset_X = 68f;
+            previewSizeSlider.PositionOffset_Y = 62f;
+            previewSizeSlider.SizeScale_X = 1f;
+            previewSizeSlider.SizeOffset_X = -130f;
+            previewSizeSlider.SizeOffset_Y = 20f;
+            previewSizeSlider.Orientation = ESleekOrientation.HORIZONTAL;
+            previewSizeSlider.Value = PreviewSizeToSliderValue(previewSize);
+            previewSizeSlider.OnValueChanged += OnPreviewSizeChanged;
+            content.AddChild(previewSizeSlider);
+
+            previewSizeLabel = Glazier.Get().CreateLabel();
+            previewSizeLabel.PositionScale_X = 1f;
+            previewSizeLabel.PositionOffset_X = -58f;
+            previewSizeLabel.PositionOffset_Y = 60f;
+            previewSizeLabel.SizeOffset_X = 54f;
+            previewSizeLabel.SizeOffset_Y = 24f;
+            previewSizeLabel.TextAlignment = TextAnchor.MiddleLeft;
+            previewSizeLabel.Text = $"{previewSize}px";
+            content.AddChild(previewSizeLabel);
+
             currentBox = Glazier.Get().CreateBox();
             currentBox.PositionOffset_X = 4f;
-            currentBox.PositionOffset_Y = 60f;
+            currentBox.PositionOffset_Y = 86f;
             currentBox.SizeScale_X = 1f;
             currentBox.SizeOffset_X = -8f;
             currentBox.SizeOffset_Y = 24f;
@@ -62,7 +106,7 @@ namespace LevelEditorPlus.UI
 
             countLabel = Glazier.Get().CreateLabel();
             countLabel.PositionOffset_X = 4f;
-            countLabel.PositionOffset_Y = 86f;
+            countLabel.PositionOffset_Y = 112f;
             countLabel.SizeScale_X = 1f;
             countLabel.SizeOffset_X = -8f;
             countLabel.SizeOffset_Y = 20f;
@@ -71,12 +115,12 @@ namespace LevelEditorPlus.UI
 
             list = new SleekList<Asset>();
             list.PositionOffset_X = 4f;
-            list.PositionOffset_Y = 108f;
+            list.PositionOffset_Y = 134f;
             list.SizeScale_X = 1f;
             list.SizeScale_Y = 1f;
             list.SizeOffset_X = -8f;
-            list.SizeOffset_Y = -112f;
-            list.itemHeight = 24;
+            list.SizeOffset_Y = -138f;
+            list.itemHeight = previewSize + 4;
             list.itemPadding = 1;
             list.onCreateElement = CreateRow;
             list.SetData(rows);
@@ -100,15 +144,91 @@ namespace LevelEditorPlus.UI
             return toggle;
         }
 
+        private static int NormalizePreviewSize(int size)
+        {
+            int closestSize = PreviewSizes[0];
+            long smallestDifference = Math.Abs((long)size - closestSize);
+            for (int index = 1; index < PreviewSizes.Length; ++index)
+            {
+                long difference = Math.Abs((long)size - PreviewSizes[index]);
+                if (difference < smallestDifference)
+                {
+                    closestSize = PreviewSizes[index];
+                    smallestDifference = difference;
+                }
+            }
+            return closestSize;
+        }
+
+        private static float PreviewSizeToSliderValue(int size)
+        {
+            return Array.IndexOf(PreviewSizes, size) / (float)(PreviewSizes.Length - 1);
+        }
+
+        private void OnPreviewSizeChanged(ISleekSlider slider, float value)
+        {
+            int index = Mathf.RoundToInt(Mathf.Clamp01(value) * (PreviewSizes.Length - 1));
+            int newSize = PreviewSizes[index];
+            if (newSize == previewSize)
+            {
+                return;
+            }
+
+            previewSize = newSize;
+            previewSizeSlider.Value = PreviewSizeToSliderValue(previewSize);
+            previewSizeLabel.Text = $"{previewSize}px";
+            Core.ModuleSettings.Data.AssetPreviewSize = previewSize;
+            Core.ModuleSettings.MarkDirty();
+            pendingPreviewRefresh = true;
+            pendingPreviewRefreshTime = Time.realtimeSinceStartup + 0.15f;
+        }
+
         private ISleekElement CreateRow(Asset asset)
         {
+            SleekWrapper row = new SleekWrapper();
+            ISleekElement preview = null;
+            if (asset is ItemAsset itemAsset)
+            {
+                SleekItemIcon icon = new SleekItemIcon();
+                icon.PositionOffset_X = 2f;
+                icon.PositionOffset_Y = 2f;
+                icon.SizeOffset_X = previewSize;
+                icon.SizeOffset_Y = previewSize;
+                icon.Refresh(itemAsset, previewSize, previewSize);
+                if (icon.GetChildAtIndex(0) is ISleekImage image)
+                {
+                    image.OnClicked += () => OnClickedAsset(asset);
+                }
+                preview = icon;
+            }
+            else if (asset is ObjectAsset objectAsset)
+            {
+                preview = ObjectAssetPreview.Create(objectAsset, previewSize, () => OnClickedAsset(asset));
+                if (preview != null)
+                {
+                    preview.PositionOffset_X = 2f;
+                    preview.PositionOffset_Y = 2f;
+                    preview.SizeOffset_X = previewSize;
+                    preview.SizeOffset_Y = previewSize;
+                }
+            }
+
+            float previewWidth = preview != null ? previewSize + 6f : 0f;
             ISleekButton button = Glazier.Get().CreateButton();
+            button.PositionOffset_X = previewWidth;
             button.SizeScale_X = 1f;
+            button.SizeScale_Y = 1f;
+            button.SizeOffset_X = -previewWidth;
             button.Text = asset.FriendlyName;
             button.TextAlignment = TextAnchor.MiddleLeft;
             button.TooltipText = $"{asset.FriendlyName}\nID: {asset.id} | From: {asset.origin?.name ?? "unknown"}";
             button.OnClicked += (b) => OnClickedAsset(asset);
-            return button;
+            row.AddChild(button);
+            if (preview != null)
+            {
+                row.AddChild(preview);
+            }
+            return row;
         }
 
         private void OnClickedAsset(Asset asset)
@@ -197,6 +317,13 @@ namespace LevelEditorPlus.UI
 
         protected override void OnTick()
         {
+            if (pendingPreviewRefresh && Time.realtimeSinceStartup >= pendingPreviewRefreshTime)
+            {
+                pendingPreviewRefresh = false;
+                list.itemHeight = previewSize + 4;
+                list.ForceRebuildElements();
+            }
+
             if (pendingSearch != null && Time.realtimeSinceStartup >= pendingSearchTime)
             {
                 pendingSearch = null;
